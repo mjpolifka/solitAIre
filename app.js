@@ -22,7 +22,6 @@ const stockEl = document.getElementById("stock");
 const wasteEl = document.getElementById("waste");
 const statusEl = document.getElementById("status");
 const newGameBtn = document.getElementById("new-game");
-const drawBtn = document.getElementById("draw-card");
 const winModal = document.getElementById("win-modal");
 const playAgainBtn = document.getElementById("play-again");
 
@@ -31,7 +30,8 @@ const state = {
   waste: [],
   foundations: [[], [], [], []],
   tableau: [[], [], [], [], [], [], []],
-  selected: null
+  selected: null,
+  dragging: null
 };
 
 function createDeck() {
@@ -66,6 +66,7 @@ function startGame() {
   state.foundations = [[], [], [], []];
   state.tableau = [[], [], [], [], [], [], []];
   state.selected = null;
+  state.dragging = null;
 
   for (let col = 0; col < 7; col += 1) {
     for (let row = 0; row <= col; row += 1) {
@@ -76,7 +77,7 @@ function startGame() {
   }
 
   state.stock = deck.map((card) => ({ ...card, faceUp: false }));
-  setStatus("New game started. Draw or move cards.");
+  setStatus("New game started. Drag cards or click stock to draw.");
   render();
 }
 
@@ -89,50 +90,16 @@ function cardToText(card) {
 }
 
 function canMoveToFoundation(card, foundationPile) {
-  if (foundationPile.length === 0) {
-    return card.value === 1;
-  }
+  if (foundationPile.length === 0) return card.value === 1;
   const top = foundationPile[foundationPile.length - 1];
   return top.suit === card.suit && card.value === top.value + 1;
 }
 
 function canMoveToTableau(card, tableauPile) {
-  if (tableauPile.length === 0) {
-    return card.value === 13;
-  }
+  if (tableauPile.length === 0) return card.value === 13;
   const top = tableauPile[tableauPile.length - 1];
   if (!top.faceUp) return false;
   return top.color !== card.color && card.value === top.value - 1;
-}
-
-function moveCards(from, to) {
-  const moving = pullMovingCards(from);
-  if (!moving) return false;
-
-  if (to.type === "foundation") {
-    if (moving.cards.length !== 1) return false;
-    const card = moving.cards[0];
-    if (!canMoveToFoundation(card, state.foundations[to.index])) return false;
-    state.foundations[to.index].push(card);
-  } else if (to.type === "tableau") {
-    if (!canMoveToTableau(moving.cards[0], state.tableau[to.index])) return false;
-    state.tableau[to.index].push(...moving.cards);
-  } else {
-    return false;
-  }
-
-  removeFromSource(moving);
-  flipTableauIfNeeded(moving.from);
-  state.selected = null;
-  maybeAutoRevealStockButton();
-  if (isWin()) {
-    setStatus("You won! Start a new game anytime.");
-    winModal.showModal();
-  } else {
-    setStatus(`Moved ${cardToText(moving.cards[0])}.`);
-  }
-  render();
-  return true;
 }
 
 function pullMovingCards(from) {
@@ -173,13 +140,43 @@ function removeFromSource(moving) {
 function flipTableauIfNeeded(from) {
   if (from.type !== "tableau") return;
   const pile = state.tableau[from.index];
-  if (pile.length > 0) {
-    pile[pile.length - 1].faceUp = true;
-  }
+  if (pile.length > 0) pile[pile.length - 1].faceUp = true;
 }
 
 function isWin() {
   return state.foundations.every((pile) => pile.length === 13);
+}
+
+function moveCards(from, to) {
+  const moving = pullMovingCards(from);
+  if (!moving) return false;
+
+  if (to.type === "foundation") {
+    if (moving.cards.length !== 1) return false;
+    const card = moving.cards[0];
+    if (!canMoveToFoundation(card, state.foundations[to.index])) return false;
+    state.foundations[to.index].push(card);
+  } else if (to.type === "tableau") {
+    if (!canMoveToTableau(moving.cards[0], state.tableau[to.index])) return false;
+    state.tableau[to.index].push(...moving.cards);
+  } else {
+    return false;
+  }
+
+  removeFromSource(moving);
+  flipTableauIfNeeded(moving.from);
+  state.selected = null;
+  state.dragging = null;
+
+  if (isWin()) {
+    setStatus("You won! Start a new game anytime.");
+    winModal.showModal();
+  } else {
+    setStatus(`Moved ${cardToText(moving.cards[0])}.`);
+  }
+
+  render();
+  return true;
 }
 
 function drawFromStock() {
@@ -188,9 +185,7 @@ function drawFromStock() {
       setStatus("No cards to draw.");
       return;
     }
-    state.stock = state.waste
-      .reverse()
-      .map((card) => ({ ...card, faceUp: false }));
+    state.stock = state.waste.reverse().map((card) => ({ ...card, faceUp: false }));
     state.waste = [];
     state.selected = null;
     setStatus("Stock refilled from waste.");
@@ -203,12 +198,22 @@ function drawFromStock() {
   state.waste.push(card);
   state.selected = null;
   setStatus(`Drew ${cardToText(card)}.`);
-  maybeAutoRevealStockButton();
   render();
 }
 
-function maybeAutoRevealStockButton() {
-  drawBtn.textContent = state.stock.length > 0 ? "Draw" : "Recycle";
+function canSelect(source) {
+  if (source.type === "waste") return state.waste.length > 0;
+  if (source.type === "foundation") return state.foundations[source.index].length > 0;
+  if (source.type === "tableau") {
+    const pile = state.tableau[source.index];
+    const card = pile.find((candidate) => candidate.id === source.cardId);
+    return Boolean(card && card.faceUp);
+  }
+  return false;
+}
+
+function sameSelection(a, b) {
+  return a.type === b.type && a.index === b.index && a.cardId === b.cardId;
 }
 
 function handleCardClick(source) {
@@ -220,7 +225,10 @@ function handleCardClick(source) {
   }
 
   if (state.selected) {
-    const moved = moveCards(state.selected, inferTargetFromSource(source));
+    const target = source.type === "foundation" || source.type === "tableau"
+      ? { type: source.type, index: source.index }
+      : { type: "waste", index: 0 };
+    const moved = moveCards(state.selected, target);
     if (!moved) {
       setStatus("Invalid move.");
       state.selected = null;
@@ -233,38 +241,10 @@ function handleCardClick(source) {
     setStatus("That card cannot be moved.");
     return;
   }
+
   state.selected = source;
-  setStatus("Card selected. Click a destination pile.");
+  setStatus("Card selected. Click a destination pile or drag it.");
   render();
-}
-
-function canSelect(source) {
-  if (source.type === "waste") {
-    return state.waste.length > 0;
-  }
-  if (source.type === "foundation") {
-    return state.foundations[source.index].length > 0;
-  }
-  if (source.type === "tableau") {
-    const pile = state.tableau[source.index];
-    const card = pile.find((c) => c.id === source.cardId);
-    return Boolean(card && card.faceUp);
-  }
-  return false;
-}
-
-function inferTargetFromSource(source) {
-  if (source.type === "tableau") {
-    return { type: "tableau", index: source.index };
-  }
-  if (source.type === "foundation") {
-    return { type: "foundation", index: source.index };
-  }
-  return { type: "waste", index: 0 };
-}
-
-function sameSelection(a, b) {
-  return a.type === b.type && a.index === b.index && a.cardId === b.cardId;
 }
 
 function attemptAutoFoundationFrom(source) {
@@ -272,10 +252,47 @@ function attemptAutoFoundationFrom(source) {
   if (!moving || moving.cards.length !== 1) return;
   const card = moving.cards[0];
   const foundationIndex = SUIT_TO_FOUNDATION[card.suit];
-  const ok = canMoveToFoundation(card, state.foundations[foundationIndex]);
-  if (!ok) return;
-  state.selected = source;
+  if (!canMoveToFoundation(card, state.foundations[foundationIndex])) return;
   moveCards(source, { type: "foundation", index: foundationIndex });
+}
+
+function onDragStart(event, source) {
+  if (!canSelect(source)) {
+    event.preventDefault();
+    return;
+  }
+
+  state.dragging = source;
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData("text/plain", JSON.stringify(source));
+}
+
+function allowDrop(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "move";
+}
+
+function getDraggedSource(event) {
+  if (state.dragging) return state.dragging;
+  try {
+    const raw = event.dataTransfer.getData("text/plain");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function onDropToTarget(event, target) {
+  event.preventDefault();
+  const source = getDraggedSource(event);
+  state.dragging = null;
+  if (!source) return;
+
+  const moved = moveCards(source, target);
+  if (!moved) {
+    setStatus("Invalid move.");
+    render();
+  }
 }
 
 function render() {
@@ -295,6 +312,7 @@ function renderStock() {
 
 function renderWaste() {
   wasteEl.replaceChildren();
+
   if (state.waste.length === 0) return;
 
   const top = state.waste[state.waste.length - 1];
@@ -304,6 +322,7 @@ function renderWaste() {
 
 function renderFoundations() {
   foundationsContainer.replaceChildren();
+
   SUITS.forEach((suit, index) => {
     const slot = document.createElement("div");
     slot.className = "pile-slot";
@@ -315,23 +334,20 @@ function renderFoundations() {
     pile.className = "foundation";
     pile.dataset.label = suit;
     pile.addEventListener("click", () => {
-      if (state.selected) {
-        const moved = moveCards(state.selected, { type: "foundation", index });
-        if (!moved) {
-          setStatus("Invalid move.");
-          state.selected = null;
-          render();
-        }
+      if (!state.selected) return;
+      const moved = moveCards(state.selected, { type: "foundation", index });
+      if (!moved) {
+        setStatus("Invalid move.");
+        state.selected = null;
+        render();
       }
     });
+    pile.addEventListener("dragover", allowDrop);
+    pile.addEventListener("drop", (event) => onDropToTarget(event, { type: "foundation", index }));
 
     if (state.foundations[index].length > 0) {
       const top = state.foundations[index][state.foundations[index].length - 1];
-      const node = buildCardNode(top, {
-        type: "foundation",
-        index,
-        cardId: top.id
-      });
+      const node = buildCardNode(top, { type: "foundation", index, cardId: top.id });
       pile.append(node);
     }
 
@@ -342,14 +358,14 @@ function renderFoundations() {
 
 function renderTableau() {
   tableauContainer.replaceChildren();
+
   state.tableau.forEach((pileCards, pileIndex) => {
     const pile = document.createElement("div");
     pile.className = "tableau-pile";
     pile.dataset.index = String(pileIndex);
 
     pile.addEventListener("click", (event) => {
-      if (event.target !== pile) return;
-      if (!state.selected) return;
+      if (event.target !== pile || !state.selected) return;
       const moved = moveCards(state.selected, { type: "tableau", index: pileIndex });
       if (!moved) {
         setStatus("Invalid move.");
@@ -357,6 +373,8 @@ function renderTableau() {
         render();
       }
     });
+    pile.addEventListener("dragover", allowDrop);
+    pile.addEventListener("drop", (event) => onDropToTarget(event, { type: "tableau", index: pileIndex }));
 
     pileCards.forEach((card, cardIndex) => {
       const cardSource = { type: "tableau", index: pileIndex, cardId: card.id };
@@ -367,7 +385,6 @@ function renderTableau() {
 
     const minHeight = Math.max(116, pileCards.length * 26 + 116);
     pile.style.minHeight = `${minHeight}px`;
-
     tableauContainer.append(pile);
   });
 }
@@ -376,8 +393,15 @@ function buildCardNode(card, source) {
   const node = document.createElement("article");
   node.className = `card ${card.color}`;
   if (!card.faceUp) node.classList.add("face-down");
-  if (state.selected && sameSelection(source, state.selected)) {
-    node.classList.add("selected");
+  if (state.selected && sameSelection(source, state.selected)) node.classList.add("selected");
+
+  const draggable = card.faceUp && canSelect(source);
+  node.draggable = draggable;
+  if (draggable) {
+    node.addEventListener("dragstart", (event) => onDragStart(event, source));
+    node.addEventListener("dragend", () => {
+      state.dragging = null;
+    });
   }
 
   if (card.faceUp) {
@@ -411,15 +435,7 @@ stockEl.addEventListener("keydown", (event) => {
     drawFromStock();
   }
 });
-wasteEl.addEventListener("click", () => {
-  if (state.selected) {
-    state.selected = null;
-    setStatus("Selection cleared.");
-    render();
-  }
-});
 newGameBtn.addEventListener("click", startGame);
-drawBtn.addEventListener("click", drawFromStock);
 playAgainBtn.addEventListener("click", startGame);
 
 startGame();
