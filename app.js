@@ -36,16 +36,19 @@ const state = {
 
 function createDeck() {
   const deck = [];
+  let serial = 0;
   for (const suit of SUITS) {
     for (const rank of RANKS) {
       deck.push({
-        id: `${rank.label}${suit}`,
+        uid: `${rank.label}${suit}-${serial}`,
+        cardCode: `${rank.label}${suit}`,
         suit,
         rank: rank.label,
         value: rank.value,
         faceUp: false,
         color: suit === "♥" || suit === "♦" ? "red" : "black"
       });
+      serial += 1;
     }
   }
   return deck;
@@ -76,8 +79,12 @@ function startGame() {
     }
   }
 
-  state.stock = deck.map((card) => ({ ...card, faceUp: false }));
+  state.stock = deck;
+  state.stock.forEach((card) => {
+    card.faceUp = false;
+  });
   setStatus("New game started. Drag cards or click stock to draw.");
+  assertValidDeckState();
   render();
 }
 
@@ -87,6 +94,27 @@ function setStatus(text) {
 
 function cardToText(card) {
   return `${card.rank}${card.suit}`;
+}
+
+function getAllCardsInPlay() {
+  return [
+    ...state.stock,
+    ...state.waste,
+    ...state.foundations.flat(),
+    ...state.tableau.flat()
+  ];
+}
+
+function assertValidDeckState() {
+  const cards = getAllCardsInPlay();
+  if (cards.length !== 52) {
+    throw new Error(`Invalid deck state: expected 52 cards but found ${cards.length}`);
+  }
+
+  const unique = new Set(cards.map((card) => card.uid));
+  if (unique.size !== 52) {
+    throw new Error(`Invalid deck state: found duplicate card instance(s).`);
+  }
 }
 
 function canMoveToFoundation(card, foundationPile) {
@@ -116,7 +144,7 @@ function pullMovingCards(from) {
 
   if (from.type === "tableau") {
     const pile = state.tableau[from.index];
-    const cardIndex = pile.findIndex((card) => card.id === from.cardId);
+    const cardIndex = pile.findIndex((card) => card.uid === from.cardUid);
     if (cardIndex < 0) return null;
     const moving = pile.slice(cardIndex);
     if (!moving[0].faceUp) return null;
@@ -175,6 +203,7 @@ function moveCards(from, to) {
     setStatus(`Moved ${cardToText(moving.cards[0])}.`);
   }
 
+  assertValidDeckState();
   render();
   return true;
 }
@@ -185,10 +214,14 @@ function drawFromStock() {
       setStatus("No cards to draw.");
       return;
     }
-    state.stock = state.waste.reverse().map((card) => ({ ...card, faceUp: false }));
+    state.stock = state.waste.reverse();
+    state.stock.forEach((card) => {
+      card.faceUp = false;
+    });
     state.waste = [];
     state.selected = null;
     setStatus("Stock refilled from waste.");
+    assertValidDeckState();
     render();
     return;
   }
@@ -198,6 +231,7 @@ function drawFromStock() {
   state.waste.push(card);
   state.selected = null;
   setStatus(`Drew ${cardToText(card)}.`);
+  assertValidDeckState();
   render();
 }
 
@@ -206,14 +240,14 @@ function canSelect(source) {
   if (source.type === "foundation") return state.foundations[source.index].length > 0;
   if (source.type === "tableau") {
     const pile = state.tableau[source.index];
-    const card = pile.find((candidate) => candidate.id === source.cardId);
+    const card = pile.find((candidate) => candidate.uid === source.cardUid);
     return Boolean(card && card.faceUp);
   }
   return false;
 }
 
 function sameSelection(a, b) {
-  return a.type === b.type && a.index === b.index && a.cardId === b.cardId;
+  return a.type === b.type && a.index === b.index && a.cardUid === b.cardUid;
 }
 
 function handleCardClick(source) {
@@ -316,7 +350,7 @@ function renderWaste() {
   if (state.waste.length === 0) return;
 
   const top = state.waste[state.waste.length - 1];
-  const node = buildCardNode(top, { type: "waste", index: 0, cardId: top.id });
+  const node = buildCardNode(top, { type: "waste", index: 0, cardUid: top.uid });
   wasteEl.append(node);
 }
 
@@ -347,7 +381,7 @@ function renderFoundations() {
 
     if (state.foundations[index].length > 0) {
       const top = state.foundations[index][state.foundations[index].length - 1];
-      const node = buildCardNode(top, { type: "foundation", index, cardId: top.id });
+      const node = buildCardNode(top, { type: "foundation", index, cardUid: top.uid });
       pile.append(node);
     }
 
@@ -377,7 +411,7 @@ function renderTableau() {
     pile.addEventListener("drop", (event) => onDropToTarget(event, { type: "tableau", index: pileIndex }));
 
     pileCards.forEach((card, cardIndex) => {
-      const cardSource = { type: "tableau", index: pileIndex, cardId: card.id };
+      const cardSource = { type: "tableau", index: pileIndex, cardUid: card.uid };
       const node = buildCardNode(card, cardSource);
       node.style.top = `${cardIndex * 26}px`;
       pile.append(node);
