@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Klondike Solitaire</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="game-shell">
+      <header class="top-bar">
+        <h1>Klondike Solitaire</h1>
+        <div class="controls">
+          <button id="new-game" type="button">New Game</button>
+        </div>
+      </header>
+
+      <section class="status-row">
+        <p id="status">Drag cards to move them. Click stock to draw.</p>
+      </section>
+
+      <section class="board" aria-label="Solitaire board">
+        <div class="row top-row">
+          <div class="pile-slot" data-pile-type="stock" data-pile-index="0">
+            <h2>Stock</h2>
+            <div id="stock" class="pile cards-stack" role="button" tabindex="0" aria-label="Stock pile"></div>
+          </div>
+          <div class="pile-slot" data-pile-type="waste" data-pile-index="0">
+            <h2>Waste</h2>
+            <div id="waste" class="pile" aria-label="Waste pile"></div>
+          </div>
+          <div class="spacer"></div>
+          <div id="foundations" class="foundations"></div>
+        </div>
+
+        <div id="tableau" class="tableau-row"></div>
+      </section>
+    </main>
+
+    <dialog id="win-modal">
+      <h2>You won! 🎉</h2>
+      <p>Great game. Start another?</p>
+      <form method="dialog">
+        <button id="play-again" value="default">Play again</button>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
