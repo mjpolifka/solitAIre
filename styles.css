@@ -134,6 +134,28 @@ button {
   cursor: pointer;
 }
 
+.card-corner {
+  display: inline-flex;
+  flex-direction: column;
+  line-height: 0.9;
+  font-size: 0.95rem;
+}
+
+.card-corner em {
+  font-style: normal;
+  font-size: 0.9rem;
+}
+
+.card-center-suit {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  opacity: 0.22;
+  font-weight: 700;
+}
+
 .card.face-down {
   background: repeating-linear-gradient(
     45deg,
@@ -157,6 +179,7 @@ button {
 
 .card .bottom-rank {
   align-self: flex-end;
+  transform: rotate(180deg);
 }
 
 .tableau-pile .card {

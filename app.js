@@ -113,7 +113,12 @@ function assertValidDeckState() {
 
   const unique = new Set(cards.map((card) => card.uid));
   if (unique.size !== 52) {
-    throw new Error(`Invalid deck state: found duplicate card instance(s).`);
+    throw new Error("Invalid deck state: found duplicate card instance(s).");
+  }
+
+  const uniqueFaces = new Set(cards.map((card) => card.cardCode));
+  if (uniqueFaces.size !== 52) {
+    throw new Error("Invalid deck state: duplicate face cards detected.");
   }
 }
 
@@ -439,14 +444,19 @@ function buildCardNode(card, source) {
   }
 
   if (card.faceUp) {
-    const topRank = document.createElement("span");
-    topRank.textContent = `${card.rank}${card.suit}`;
+    const topCorner = document.createElement("span");
+    topCorner.className = "card-corner";
+    topCorner.innerHTML = `<strong>${card.rank}</strong><em>${card.suit}</em>`;
 
-    const bottomRank = document.createElement("span");
-    bottomRank.className = "bottom-rank";
-    bottomRank.textContent = `${card.rank}${card.suit}`;
+    const centerSuit = document.createElement("span");
+    centerSuit.className = "card-center-suit";
+    centerSuit.textContent = card.suit;
 
-    node.append(topRank, bottomRank);
+    const bottomCorner = document.createElement("span");
+    bottomCorner.className = "card-corner bottom-rank";
+    bottomCorner.innerHTML = `<strong>${card.rank}</strong><em>${card.suit}</em>`;
+
+    node.append(topCorner, centerSuit, bottomCorner);
   }
 
   node.addEventListener("click", (event) => {
