@@ -21,6 +21,9 @@ const stockEl = document.getElementById("stock");
 const wasteEl = document.getElementById("waste");
 const statusEl = document.getElementById("status");
 const newGameBtn = document.getElementById("new-game");
+const autoCompleteModal = document.getElementById("auto-complete-modal");
+const autoCompleteYesBtn = document.getElementById("auto-complete-yes");
+const autoCompleteNoBtn = document.getElementById("auto-complete-no");
 const winModal = document.getElementById("win-modal");
 const playAgainBtn = document.getElementById("play-again");
 
@@ -30,7 +33,9 @@ const state = {
   foundations: [[], [], [], []],
   tableau: [[], [], [], [], [], [], []],
   selected: null,
-  dragging: null
+  dragging: null,
+  autoCompletePromptDismissed: false,
+  autoCompleting: false
 };
 
 function createDeck() {
@@ -62,6 +67,8 @@ function shuffle(deck) {
 }
 
 function startGame() {
+  if (autoCompleteModal.open) autoCompleteModal.close();
+  if (winModal.open) winModal.close();
   const deck = shuffle(createDeck());
   state.stock = [];
   state.waste = [];
@@ -69,6 +76,8 @@ function startGame() {
   state.tableau = [[], [], [], [], [], [], []];
   state.selected = null;
   state.dragging = null;
+  state.autoCompletePromptDismissed = false;
+  state.autoCompleting = false;
 
   for (let col = 0; col < 7; col += 1) {
     for (let row = 0; row <= col; row += 1) {
@@ -202,6 +211,7 @@ function moveCards(from, to) {
   state.dragging = null;
 
   if (isWin()) {
+    state.autoCompleting = false;
     setStatus("You won! Start a new game anytime.");
     winModal.showModal();
   } else {
@@ -210,10 +220,89 @@ function moveCards(from, to) {
 
   assertValidDeckState();
   render();
+  maybePromptAutoComplete();
   return true;
 }
 
+function allTableauCardsFaceUp() {
+  return state.tableau.every((pile) => pile.every((card) => card.faceUp));
+}
+
+function canOfferAutoComplete() {
+  return (
+    !state.autoCompleting &&
+    !state.autoCompletePromptDismissed &&
+    !isWin() &&
+    state.stock.length === 0 &&
+    allTableauCardsFaceUp()
+  );
+}
+
+function maybePromptAutoComplete() {
+  if (!canOfferAutoComplete() || autoCompleteModal.open) return;
+  setStatus("All tableau cards are face-up. Auto-complete the game?");
+  autoCompleteModal.showModal();
+}
+
+function getAutoCompleteCandidates() {
+  const candidates = [];
+
+  if (state.waste.length > 0) {
+    const card = state.waste[state.waste.length - 1];
+    const foundationTarget = findFirstFoundationTarget(card, { type: "waste", index: 0, cardUid: card.uid });
+    if (foundationTarget) {
+      candidates.push({ card, source: { type: "waste", index: 0, cardUid: card.uid }, target: foundationTarget });
+    }
+  }
+
+  state.tableau.forEach((pile, index) => {
+    if (pile.length === 0) return;
+    const card = pile[pile.length - 1];
+    if (!card.faceUp) return;
+    const source = { type: "tableau", index, cardUid: card.uid };
+    const foundationTarget = findFirstFoundationTarget(card, source);
+    if (foundationTarget) candidates.push({ card, source, target: foundationTarget });
+  });
+
+  return candidates.sort((a, b) => a.card.value - b.card.value);
+}
+
+function autoCompleteNextMove() {
+  if (!state.autoCompleting) return;
+  if (isWin()) return;
+
+  const nextMove = getAutoCompleteCandidates()[0];
+  if (!nextMove) {
+    state.autoCompleting = false;
+    setStatus("Auto-complete paused because no foundation move is currently legal.");
+    render();
+    return;
+  }
+
+  moveCards(nextMove.source, nextMove.target);
+  if (state.autoCompleting && !isWin()) {
+    window.setTimeout(autoCompleteNextMove, 120);
+  }
+}
+
+function startAutoComplete() {
+  autoCompleteModal.close();
+  state.autoCompletePromptDismissed = true;
+  state.autoCompleting = true;
+  state.selected = null;
+  state.dragging = null;
+  setStatus("Auto-completing the game...");
+  autoCompleteNextMove();
+}
+
+function declineAutoComplete() {
+  state.autoCompletePromptDismissed = true;
+  autoCompleteModal.close();
+  setStatus("Auto-complete skipped. Keep playing however you want.");
+}
+
 function drawFromStock() {
+  if (state.autoCompleting) return;
   if (state.stock.length === 0) {
     if (state.waste.length === 0) {
       setStatus("No cards to draw.");
@@ -228,6 +317,7 @@ function drawFromStock() {
     setStatus("Stock refilled from waste.");
     assertValidDeckState();
     render();
+    maybePromptAutoComplete();
     return;
   }
 
@@ -238,6 +328,7 @@ function drawFromStock() {
   setStatus(`Drew ${cardToText(card)}.`);
   assertValidDeckState();
   render();
+  maybePromptAutoComplete();
 }
 
 function canSelect(source) {
@@ -298,6 +389,7 @@ function findFirstLegalMove(source) {
 }
 
 function handleCardClick(source) {
+  if (state.autoCompleting) return;
   if (!canSelect(source)) {
     setStatus("That card cannot be moved.");
     return;
@@ -323,7 +415,7 @@ function attemptAutoFoundationFrom(source) {
 }
 
 function onDragStart(event, source) {
-  if (!canSelect(source)) {
+  if (state.autoCompleting || !canSelect(source)) {
     event.preventDefault();
     return;
   }
@@ -507,6 +599,8 @@ stockEl.addEventListener("keydown", (event) => {
   }
 });
 newGameBtn.addEventListener("click", startGame);
+autoCompleteYesBtn.addEventListener("click", startAutoComplete);
+autoCompleteNoBtn.addEventListener("click", declineAutoComplete);
 playAgainBtn.addEventListener("click", startGame);
 
 startGame();
