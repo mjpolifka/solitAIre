@@ -1,5 +1,4 @@
 const SUITS = ["♠", "♥", "♦", "♣"];
-const SUIT_TO_FOUNDATION = { "♠": 0, "♥": 1, "♦": 2, "♣": 3 };
 const RANKS = [
   { label: "A", value: 1 },
   { label: "2", value: 2 },
@@ -83,7 +82,7 @@ function startGame() {
   state.stock.forEach((card) => {
     card.faceUp = false;
   });
-  setStatus("New game started. Drag cards or click stock to draw.");
+  setStatus("New game started. Click cards to auto-move them, drag cards, or click stock to draw.");
   assertValidDeckState();
   render();
 }
@@ -185,6 +184,7 @@ function moveCards(from, to) {
   if (!moving) return false;
 
   if (to.type === "foundation") {
+    if (moving.from.type === "foundation") return false;
     if (moving.cards.length !== 1) return false;
     const card = moving.cards[0];
     if (!canMoveToFoundation(card, state.foundations[to.index])) return false;
@@ -255,44 +255,71 @@ function sameSelection(a, b) {
   return a.type === b.type && a.index === b.index && a.cardUid === b.cardUid;
 }
 
-function handleCardClick(source) {
-  if (state.selected && sameSelection(source, state.selected)) {
-    state.selected = null;
-    setStatus("Selection cleared.");
-    render();
-    return;
-  }
+function isSamePile(source, target) {
+  return source.type === target.type && source.index === target.index;
+}
 
-  if (state.selected) {
-    const target = source.type === "foundation" || source.type === "tableau"
-      ? { type: source.type, index: source.index }
-      : { type: "waste", index: 0 };
-    const moved = moveCards(state.selected, target);
-    if (!moved) {
-      setStatus("Invalid move.");
-      state.selected = null;
-      render();
+function findFirstFoundationTarget(card, source) {
+  if (source.type === "foundation") return null;
+
+  for (let index = 0; index < state.foundations.length; index += 1) {
+    const foundationTarget = { type: "foundation", index };
+    if (
+      !isSamePile(source, foundationTarget) &&
+      canMoveToFoundation(card, state.foundations[index])
+    ) {
+      return foundationTarget;
     }
-    return;
   }
 
+  return null;
+}
+
+function findFirstLegalMove(source) {
+  const moving = pullMovingCards(source);
+  if (!moving) return null;
+
+  if (moving.cards.length === 1) {
+    const foundationTarget = findFirstFoundationTarget(moving.cards[0], source);
+    if (foundationTarget) return foundationTarget;
+  }
+
+  for (let index = 0; index < state.tableau.length; index += 1) {
+    const tableauTarget = { type: "tableau", index };
+    if (
+      !isSamePile(source, tableauTarget) &&
+      canMoveToTableau(moving.cards[0], state.tableau[index])
+    ) {
+      return tableauTarget;
+    }
+  }
+
+  return null;
+}
+
+function handleCardClick(source) {
   if (!canSelect(source)) {
     setStatus("That card cannot be moved.");
     return;
   }
 
-  state.selected = source;
-  setStatus("Card selected. Click a destination pile or drag it.");
-  render();
+  const target = findFirstLegalMove(source);
+  if (!target) {
+    state.selected = null;
+    setStatus(`No legal moves for ${cardToText(pullMovingCards(source).cards[0])}.`);
+    render();
+    return;
+  }
+
+  moveCards(source, target);
 }
 
 function attemptAutoFoundationFrom(source) {
   const moving = pullMovingCards(source);
   if (!moving || moving.cards.length !== 1) return;
-  const card = moving.cards[0];
-  const foundationIndex = SUIT_TO_FOUNDATION[card.suit];
-  if (!canMoveToFoundation(card, state.foundations[foundationIndex])) return;
-  moveCards(source, { type: "foundation", index: foundationIndex });
+  const foundationTarget = findFirstFoundationTarget(moving.cards[0], source);
+  if (!foundationTarget) return;
+  moveCards(source, foundationTarget);
 }
 
 function onDragStart(event, source) {
@@ -362,7 +389,7 @@ function renderWaste() {
 function renderFoundations() {
   foundationsContainer.replaceChildren();
 
-  SUITS.forEach((suit, index) => {
+  state.foundations.forEach((foundationCards, index) => {
     const slot = document.createElement("div");
     slot.className = "pile-slot";
 
@@ -371,7 +398,7 @@ function renderFoundations() {
 
     const pile = document.createElement("div");
     pile.className = "foundation";
-    pile.dataset.label = suit;
+    pile.dataset.label = "A";
     pile.addEventListener("click", () => {
       if (!state.selected) return;
       const moved = moveCards(state.selected, { type: "foundation", index });
@@ -384,8 +411,8 @@ function renderFoundations() {
     pile.addEventListener("dragover", allowDrop);
     pile.addEventListener("drop", (event) => onDropToTarget(event, { type: "foundation", index }));
 
-    if (state.foundations[index].length > 0) {
-      const top = state.foundations[index][state.foundations[index].length - 1];
+    if (foundationCards.length > 0) {
+      const top = foundationCards[foundationCards.length - 1];
       const node = buildCardNode(top, { type: "foundation", index, cardUid: top.uid });
       pile.append(node);
     }
