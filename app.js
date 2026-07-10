@@ -83,7 +83,7 @@ function startGame() {
   state.stock.forEach((card) => {
     card.faceUp = false;
   });
-  setStatus("New game started. Drag cards or click stock to draw.");
+  setStatus("New game started. Click cards to auto-move them, drag cards, or click stock to draw.");
   assertValidDeckState();
   render();
 }
@@ -255,35 +255,54 @@ function sameSelection(a, b) {
   return a.type === b.type && a.index === b.index && a.cardUid === b.cardUid;
 }
 
-function handleCardClick(source) {
-  if (state.selected && sameSelection(source, state.selected)) {
-    state.selected = null;
-    setStatus("Selection cleared.");
-    render();
-    return;
-  }
+function isSamePile(source, target) {
+  return source.type === target.type && source.index === target.index;
+}
 
-  if (state.selected) {
-    const target = source.type === "foundation" || source.type === "tableau"
-      ? { type: source.type, index: source.index }
-      : { type: "waste", index: 0 };
-    const moved = moveCards(state.selected, target);
-    if (!moved) {
-      setStatus("Invalid move.");
-      state.selected = null;
-      render();
+function findFirstLegalMove(source) {
+  const moving = pullMovingCards(source);
+  if (!moving) return null;
+
+  if (moving.cards.length === 1) {
+    const card = moving.cards[0];
+    const foundationIndex = SUIT_TO_FOUNDATION[card.suit];
+    const foundationTarget = { type: "foundation", index: foundationIndex };
+    if (
+      !isSamePile(source, foundationTarget) &&
+      canMoveToFoundation(card, state.foundations[foundationIndex])
+    ) {
+      return foundationTarget;
     }
-    return;
   }
 
+  for (let index = 0; index < state.tableau.length; index += 1) {
+    const tableauTarget = { type: "tableau", index };
+    if (
+      !isSamePile(source, tableauTarget) &&
+      canMoveToTableau(moving.cards[0], state.tableau[index])
+    ) {
+      return tableauTarget;
+    }
+  }
+
+  return null;
+}
+
+function handleCardClick(source) {
   if (!canSelect(source)) {
     setStatus("That card cannot be moved.");
     return;
   }
 
-  state.selected = source;
-  setStatus("Card selected. Click a destination pile or drag it.");
-  render();
+  const target = findFirstLegalMove(source);
+  if (!target) {
+    state.selected = null;
+    setStatus(`No legal moves for ${cardToText(pullMovingCards(source).cards[0])}.`);
+    render();
+    return;
+  }
+
+  moveCards(source, target);
 }
 
 function attemptAutoFoundationFrom(source) {
