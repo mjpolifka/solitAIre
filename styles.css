@@ -200,6 +200,19 @@ dialog {
   border: none;
   border-radius: 0.8rem;
   padding: 1.2rem;
+  color: var(--text);
+  max-width: min(90vw, 28rem);
+}
+
+dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  margin-top: 1rem;
 }
 
 @media (max-width: 900px) {
