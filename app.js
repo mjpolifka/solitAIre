@@ -233,7 +233,6 @@ function canOfferAutoComplete() {
     !state.autoCompleting &&
     !state.autoCompletePromptDismissed &&
     !isWin() &&
-    state.stock.length === 0 &&
     allTableauCardsFaceUp()
   );
 }
@@ -267,12 +266,43 @@ function getAutoCompleteCandidates() {
   return candidates.sort((a, b) => a.card.value - b.card.value);
 }
 
+function advanceStockForAutoComplete() {
+  if (state.stock.length === 0) {
+    if (state.waste.length === 0) return false;
+
+    state.stock = state.waste.reverse();
+    state.stock.forEach((card) => {
+      card.faceUp = false;
+    });
+    state.waste = [];
+    state.selected = null;
+    setStatus("Auto-complete recycled the waste to look for the next move.");
+    assertValidDeckState();
+    render();
+    return true;
+  }
+
+  const card = state.stock.pop();
+  card.faceUp = true;
+  state.waste.push(card);
+  state.selected = null;
+  setStatus(`Auto-complete turned ${cardToText(card)}.`);
+  assertValidDeckState();
+  render();
+  return true;
+}
+
 function autoCompleteNextMove() {
   if (!state.autoCompleting) return;
   if (isWin()) return;
 
   const nextMove = getAutoCompleteCandidates()[0];
   if (!nextMove) {
+    if (advanceStockForAutoComplete()) {
+      window.setTimeout(autoCompleteNextMove, 120);
+      return;
+    }
+
     state.autoCompleting = false;
     setStatus("Auto-complete paused because no foundation move is currently legal.");
     render();
